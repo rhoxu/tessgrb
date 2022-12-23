@@ -2,7 +2,7 @@
 
 Hello! This module is built to find GRB signals in TESS data. It involves a whole lot of downloading, and a whole lot of 
 optimising to find the best sections of the downloaded data to look at. The data is reduced using TESSreduce 
-(see https://github.com/CheerfulUser/TESSreduce), though some modifications to the package, as well as Astrocut, are required. 
+(see https://github.com/CheerfulUser/TESSreduce), though some modifications to the package, as well as Astrocut, are required. These are very small changes, which should not affect any other aspect of their functions.
 The modified modules are located in the "modules" folder. The main module file is **tessGRB.py** in the main repository directory. I'm not too familiar with github just yet, so there is no convenient pip install process as of now - just download the module into your working directory.
 
 The processes of interest are the `get_files()` and `grbs_entire()` functions. As described in the files within the "examples" folder, they go 
