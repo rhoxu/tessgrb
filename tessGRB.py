@@ -23,8 +23,6 @@ from astropy.io.fits import getdata
 from astropy.table import Table
 from astropy.visualization import (SqrtStretch, ImageNormalize)
 
-print('Check')
-
 def _extract_fits(pixelfile):
     """
     Quickly extract fits
@@ -332,11 +330,18 @@ def get_files(path,split=1,number=1):
         print('Invalid number/split combo. Please ensure number is no bigger than the total number of splits being made.')
         return
     
+    if path[-1] != '/':
+        path = path + '/'
+    
+    # -- Get list of large error, maybe observed GRBs -- #
     obsFrame = observed_grbs()
-    s,m,l = error_sort(obsFrame)
+    s,m,l = error_sort(obsFrame) # small,med,large
     
     home_dir = os.getcwd()
     
+    # -- This process defines how to weight the download process. 'Late' GRBs 
+    #    have at least 3 times as much data to download, so they are split 
+    #    more than the early GRBs -- #
     timeSort = l.sort_values('time')
     early = timeSort.drop(timeSort[(timeSort.time >= 59031)].index)
     late = timeSort.drop(timeSort[(timeSort.time < 59031)].index).iloc[::-1]
@@ -397,7 +402,7 @@ def get_files(path,split=1,number=1):
             start = (number-1-earlysplit) * late_interval
             end = (number-earlysplit) * late_interval 
     
-    
+    # -- Download from TESSarchives -- #
     for i in range(start,end):
         os.chdir(path)
         
@@ -459,11 +464,15 @@ def grbs_entire(path,split=1,number=1):
     if path[-1] != '/':
         path = path + '/'
     
+    # -- Get list of large error, maybe observed GRBs -- #
     obsFrame = observed_grbs()
-    s,m,l = error_sort(obsFrame)
+    s,m,l = error_sort(obsFrame) # small,med,large
     
     home_dir = os.getcwd()
     
+    # -- This process defines how to weight the download process. 'Late' GRBs 
+    #    have at least 3 times as much data to download, so they are split 
+    #    more than the early GRBs -- #
     timeSort = l.sort_values('time')
     early = timeSort.drop(timeSort[(timeSort.time >= 59031)].index)
     late = timeSort.drop(timeSort[(timeSort.time < 59031)].index).iloc[::-1]
@@ -524,7 +533,7 @@ def grbs_entire(path,split=1,number=1):
             start = (number-1-earlysplit) * late_interval
             end = (number-earlysplit) * late_interval 
     
-    
+    # -- Perform tg.entire() -- #
     for i in range(start,end):
         os.chdir(path)
         name = frame.iloc[i].Name
