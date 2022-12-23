@@ -20,4 +20,3 @@ path = 'insert_desired_path_here'  # enter your own path. '/' at end is optional
 #    time (likely won't be perfect) -- #
   
 tg.get_files(path, split=7, number=3) 
-
