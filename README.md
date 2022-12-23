@@ -11,3 +11,5 @@ individual GRBs that meet this criteria (as of Dec 2022) is 38. The `get_files()
 The processes can be easliy divided into simultaneous tasks - please read the comments in the "examples" files to understand how this works. Note that
 the `grbs_entire()` process is unfortunately hugely time/space/memory consuming, due to the sheer amount of data TESS spits out. Thus dividing into
 a number of scripts may not be advantageous. 
+
+If there are any issues (which there may be!), please email me - Hugh hro52@uclive.ac.nz.
