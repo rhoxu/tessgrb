@@ -1327,10 +1327,10 @@ class tessgrb():
                     print('Error = {:.2f} deg'.format(self.error))
                 
                 # -- Make Cube -- #
-                #try:
-                self._make_cube(cam,chip,delete_files,ask,verbose,cubing)
-                #except:
-                    #pass
+                try:
+                    self._make_cube(cam,chip,delete_files,ask,verbose,cubing)
+                except:
+                    pass
                 
                 if self.cube is not None:
                     try:
