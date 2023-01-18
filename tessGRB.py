@@ -9,10 +9,8 @@ import tessreduce as tr
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from labellines import labelLine, labelLines
 import pandas as pd
 import math
-from decimal import *
 
 from time import time as t
 
@@ -20,16 +18,10 @@ from astrocut import CubeFactory
 from astrocut import CutoutFactory
 from astropy.io import fits
 from astropy import wcs
-from astropy import units as u
-from astropy.coordinates import SkyCoord
 from astropy.time import Time
 from astropy.io.fits import getdata
 from astropy.table import Table
 from astropy.visualization import (SqrtStretch, ImageNormalize)
-
-
-
-print('Check')
 
 def _extract_fits(pixelfile):
     """
@@ -54,12 +46,16 @@ def _grbs_information(path):
     - .camera
     - .chip
     """
+        
+    if path[-1] != '/':
+        path = path + '/'
     
-    if not os.path.exists(path + '/Summary_table.txt'):
+    if not os.path.exists(path + 'Summary_table.txt'):
         os.system('wget https://user-web.icecube.wisc.edu/~grbweb_public/Summary_table.txt')
     
-    summary = open('Summary_table.txt')
-    summary = summary.readlines()
+    file = open('Summary_table.txt')
+    summary = file.readlines()
+    file.close()
 
     namelist = []
     ra_list = [] 
@@ -111,6 +107,9 @@ def observed_grbs(path='/home/phys/astronomy/hro52/Code/GammaRayBurstProject/TES
     """
     Create dataframe of observed grbs
     """
+    
+    if path[-1] != '/':
+        path = path + '/'
     
     print('Making Observed Frame')
     cutFrame = _grbs_information(path)
@@ -331,11 +330,18 @@ def get_files(path,split=1,number=1):
         print('Invalid number/split combo. Please ensure number is no bigger than the total number of splits being made.')
         return
     
+    if path[-1] != '/':
+        path = path + '/'
+    
+    # -- Get list of large error, maybe observed GRBs -- #
     obsFrame = observed_grbs()
-    s,m,l = error_sort(obsFrame)
+    s,m,l = error_sort(obsFrame) # small,med,large
     
     home_dir = os.getcwd()
     
+    # -- This process defines how to weight the download process. 'Late' GRBs 
+    #    have at least 3 times as much data to download, so they are split 
+    #    more than the early GRBs -- #
     timeSort = l.sort_values('time')
     early = timeSort.drop(timeSort[(timeSort.time >= 59031)].index)
     late = timeSort.drop(timeSort[(timeSort.time < 59031)].index).iloc[::-1]
@@ -396,7 +402,7 @@ def get_files(path,split=1,number=1):
             start = (number-1-earlysplit) * late_interval
             end = (number-earlysplit) * late_interval 
     
-    
+    # -- Download from TESSarchives -- #
     for i in range(start,end):
         os.chdir(path)
         
@@ -411,11 +417,11 @@ def get_files(path,split=1,number=1):
         try:
             os.system('wget https://archive.stsci.edu/missions/tess/download_scripts/sector/tesscurl_sector_%s_ffic.sh'%sector)
             
-            new_folder = 'Cam{}Chip{}'.format(cam,chip)
-            os.mkdir(new_folder)
-            
             file = open('tesscurl_sector_%s_ffic.sh'%sector)
             filelines = file.readlines()
+    
+            new_folder = 'Cam{}Chip{}'.format(cam,chip)
+            os.mkdir(new_folder)
     
             os.chdir(path + name + '/' + new_folder)
             
@@ -425,6 +431,8 @@ def get_files(path,split=1,number=1):
                     print('\n')
                     print('Downloading {} ({} of {})'.format(name,i+1,end-start))
                     print('\n')
+        
+            file.close()
         
         except: 
             'Downloading {} failed!'.format(name)
@@ -456,11 +464,15 @@ def grbs_entire(path,split=1,number=1):
     if path[-1] != '/':
         path = path + '/'
     
+    # -- Get list of large error, maybe observed GRBs -- #
     obsFrame = observed_grbs()
-    s,m,l = error_sort(obsFrame)
+    s,m,l = error_sort(obsFrame) # small,med,large
     
     home_dir = os.getcwd()
     
+    # -- This process defines how to weight the download process. 'Late' GRBs 
+    #    have at least 3 times as much data to download, so they are split 
+    #    more than the early GRBs -- #
     timeSort = l.sort_values('time')
     early = timeSort.drop(timeSort[(timeSort.time >= 59031)].index)
     late = timeSort.drop(timeSort[(timeSort.time < 59031)].index).iloc[::-1]
@@ -521,13 +533,13 @@ def grbs_entire(path,split=1,number=1):
             start = (number-1-earlysplit) * late_interval
             end = (number-earlysplit) * late_interval 
     
-    
+    # -- Perform tg.entire() -- #
     for i in range(start,end):
         os.chdir(path)
         name = frame.iloc[i].Name
         
         if not os.path.exists(path + name):
-            print('GRB not downloaded/too recent.')
+            print('{} not downloaded/too recent.'.format(name))
         else:
             grb = tessgrb(name=name,path=path,entire=True)
         
@@ -731,7 +743,8 @@ class tessgrb():
                     cube_maker = CubeFactory()
                     self.cube_file = cube_maker.make_cube(input_files,
                                                           cube_file= cube_file_name,
-                                                          verbose=self.verbose)
+                                                          verbose=self.verbose,
+                                                          max_memory=200)
                                                           
                     self.cube = _extract_fits(self.cube_file)
                     
@@ -1670,6 +1683,7 @@ class tessgrb():
                 reduced_names.append(nameReducedCut)
             extra = True
                             
+
         # -- Reduces every cut -- #
         for i in range(len(cut_names)):
             
@@ -1681,7 +1695,6 @@ class tessgrb():
                     print('Cam {} Chip {} cut already reduced!'.format(cam,chip))
 
                 self.tessreduce_file = file_path+'/'+reduced_names[i]
-                return
             
             else:
                 
@@ -1746,7 +1759,7 @@ class tessgrb():
                     
                     print('--Writing Complete (Time: {:.2f} mins)--'.format((t()-tw)/60))
                     print('\n')
-                    
+                
                 except:
                     if extra:
                         print('Reducing Cam {} Chip {} Cut {} Failed :( Time Elapsed: {:.2f} mins.'.format(cam,chip,i+1,(t()-ts)/60))
@@ -2172,6 +2185,9 @@ class tessgrb():
                             print('\n')
                             print('Downloading Cam {} Chip {} ({} of {})'.format(cam,chip,i,len(self.neighbours)))
                             print('\n')
+                    
+                    file.close()
+                
                 i += 1
         else:
             print('No neighbour chips!')
