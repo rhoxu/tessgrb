@@ -717,25 +717,27 @@ class tessreduce():
             mask = Cat_mask(self.tpf,maglim,scale,strapsize)
             sources = ((mask & 1)+1 ==1) * 1.
             sources[sources==0] = np.nan
+            tmp = np.nansum(data*sources,axis=(1,2))
+            tmp[tmp==0] = 1e12 # random big number 
+            ref = data[np.argmin(tmp)] * sources
+            try:
+                qe = correct_straps(ref,mask,parallel=True)
+            except:
+                qe = correct_straps(ref,mask,parallel=False)
+            mm = Source_mask(ref * qe * sources)
+            mm[np.isnan(mm)] = 0
+            mm = mm.astype(int)
+            mm = abs(mm-1)
+            fullmask = mask | (mm*1)
+
         except:
+            print('Source_mask')
             mask = Source_mask(self.ref)
             mask = mask.astype(int)
             sources = mask * 1.0
             sources[sources==0] = np.nan
+            fullmask = mask
 
-        tmp = np.nansum(data*sources,axis=(1,2))
-        tmp[tmp==0] = 1e12 # random big number 
-        ref = data[np.argmin(tmp)] * sources
-        try:
-            qe = correct_straps(ref,mask,parallel=True)
-        except:
-            qe = correct_straps(ref,mask,parallel=False)
-        mm = Source_mask(ref * qe * sources)
-        mm[np.isnan(mm)] = 0
-        mm = mm.astype(int)
-        mm = abs(mm-1)
-
-        fullmask = mask | (mm*1)
         self.mask = fullmask
 
     def background(self,calc_qe=True, strap_iso=True):
