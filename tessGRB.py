@@ -22,6 +22,8 @@ from astropy.time import Time
 from astropy.io.fits import getdata
 from astropy.table import Table
 from astropy.visualization import (SqrtStretch, ImageNormalize)
+from astropy import units as u
+
 
 def _extract_fits(pixelfile):
     """
@@ -62,6 +64,8 @@ def _grbs_information(path):
     dec_list = []
     date_list = []
     err_list = []
+    t90_list = []
+    flu_list = []
 
     for ii in range(4,len(summary)-1):
         list1 = summary[ii].split(' ')
@@ -76,12 +80,16 @@ def _grbs_information(path):
         decIteration = float(list2[4])
         dateIteration = float(list2[14])
         errorIteration = float(list2[5])
+        t90Iteration = float(list2[6])
+        fluIteration = float(list2[9])
 
         namelist.append(nameIteration)
         ra_list.append(raIteration)
         dec_list.append(decIteration)
         date_list.append(dateIteration)
         err_list.append(errorIteration)
+        t90_list.append(t90Iteration)
+        flu_list.append(fluIteration)
 
 
     namelist = np.array(namelist)
@@ -89,13 +97,18 @@ def _grbs_information(path):
     declist = np.array(dec_list)
     timelist = np.array(date_list)
     errlist = np.array(err_list)
+    t90_list = np.array(t90_list)
+    flu_list = np.array(flu_list)
+
 
     totalFrame = pd.DataFrame({
         'Name': namelist,
         'RA': ralist,
         'dec': declist,
         'time': timelist,
-        'error': errlist})
+        'error': errlist,
+        't90': t90_list,
+        'flu': flu_list})
 
     cutFrame = totalFrame.loc[totalFrame["time"] > 58119]
     
@@ -129,14 +142,16 @@ def observed_grbs(path='/home/phys/astronomy/hro52/Code/GammaRayBurstProject/TES
     good_camlist = []
     good_ccdlist = []
 
-    
+    badNames = ['GRB180906A*','GRB210126A*','GRB210928B*','GRB190422C*']
+
+
     for ii in range(len(cutFrame)):
         try: 
             
             obj = tr.spacetime_lookup(ra[ii],dec[ii],time[ii],print_table=verbose)
 
             for jj in range(len(obj)):
-                if obj[jj][3] == True:
+                if (obj[jj][3] == True) & (cutFrame.iloc[ii].Name not in badNames):
                     observed.append(ii)
                     good_sectorlist.append(obj[jj][2])
                     good_camlist.append(obj[jj][4])
@@ -610,6 +625,7 @@ class tessgrb():
         self.tessreduce_file = None # reduced file path
         self.flux = None # flux array
         self.times = None # time vector
+        self.cutNum = None
 
         if find_cut:
             self.find_cut()
@@ -1131,7 +1147,7 @@ class tessgrb():
         return LB, xRad, yRad
     
     
-    def _print_cut(self,cam,chip,plot=True):
+    def _print_cut(self,cam,chip,plot=True,proj=False):
         """
         Finds and displays ffi region with GRB location and proposed cutout region. 
         Returns information on the cutout to be used in astrocut.
@@ -1250,7 +1266,12 @@ class tessgrb():
             
         if plot:
             # -- Plots data -- #
-            fig, ax = plt.subplots(ncols=1, nrows=1, constrained_layout=True, figsize=(6,6))
+            fig = plt.figure(constrained_layout=False, figsize=(6,6))
+            
+            if proj:
+                ax = plt.subplot(projection=self.ref_wcs)
+            else:
+                ax = plt.subplot()
             
             # -- Real rectangle edge -- #
             rectangleTotal = patches.Rectangle((44,30), 2048, 2048,edgecolor='black',facecolor='none',alpha=1)
@@ -1258,7 +1279,7 @@ class tessgrb():
             # -- Sets title -- #
             if home_chip:
                 ax.set_title('{} Camera {} Chip {}'.format(self.name,cam,chip))
-                ax.scatter(self.grb_px[0],self.grb_px[1],color='g')
+                ax.scatter(self.grb_px[0],self.grb_px[1],color='g',label='Estimated GRB Location')
             else:
                 ax.set_title('{} Camera {} Chip {} (GRB is on Cam {} Chip {})'.format(self.name,cam,chip,self.camera,self.chip))
             ax.set_xlim(0,self.xDim)
@@ -1266,7 +1287,7 @@ class tessgrb():
             ax.grid()
             ax.add_patch(rectangleTotal)
             
-            ax.plot(ellipse[0],ellipse[1],'.',color='g')
+            ax.plot(ellipse[0],ellipse[1],color='g',marker=',',label='2$\sigma$ Position Error Radius')
             
             # -- Adds cuts -- #
             colors = ['red','blue','purple','orangered']
@@ -1281,14 +1302,17 @@ class tessgrb():
                     centrePx = self.cutCentrePx[i]
                     
                 rectangle = patches.Rectangle(corners[i],x,y,edgecolor=colors[i],
-                                              facecolor='none',alpha=1)
+                                              facecolor='none',alpha=1,label='Cut {}'.format(i+1))
                 
-                ax.scatter(centrePx[0],centrePx[1],color=colors[i],marker='x')
+                #ax.scatter(centrePx[0],centrePx[1],color=colors[i],marker='x')
                 ax.add_patch(rectangle)
+                
+            return fig, ax
             
 
     def find_cut(self,cam=None,chip=None,delete_files=False,
-                 plot=True,ask=True,verbose=True,cubing=True):
+                 plot=True,ask=True,verbose=True,cubing=True,
+                 proj=False,replot=False):
         """
         Finds the cut(s) required for this chip. Involves creating a datacube.
         ------------------------------------
@@ -1334,10 +1358,16 @@ class tessgrb():
                 
                 if self.cube is not None:
                     try:
-                        self._print_cut(cam,chip,plot)
+                        if plot:
+                            fig,ax = self._print_cut(cam,chip,plot,proj)
+                            if replot:
+                                return fig, ax
+                        else:
+                            self._print_cut(cam,chip,plot,proj)
                     except:
                         print('WCS non-convergence :( -- error too large.')
-                        
+                        if replot:
+                            return None, None
     
     def make_cut(self,cam=None,chip=None,ask=True,verbose=True,cubing=True):
         """
@@ -1525,7 +1555,7 @@ class tessgrb():
                 grb = (cut_grb_px[0] + transform[0],cut_grb_px[1] + transform[1])
               
             # -- Plot cut ellipse -- #
-            plt.plot(ellipse[0],ellipse[1],'.',color=colours[i])
+            plt.plot(ellipse[0],ellipse[1],marker=',',color=colours[i])
 
         # -- Plot GRB location -- #
         if home_chip:
@@ -1535,7 +1565,7 @@ class tessgrb():
             plt.title('Camera {} Chip {} (GRB is on Cam {} Chip {})'.format(cam,chip,self.camera,self.chip))
             
             
-    def confirm_cut(self,cam=None,chip=None,cut=None):
+    def confirm_cut(self,cam=None,chip=None,cut=None,plot=True):
         """
         Displays cut with error region.
         ------------------------------------
@@ -1602,40 +1632,43 @@ class tessgrb():
             self.cut_wcs = wcs.WCS(self.cut[2].header) 
             cut_grb_px = self.cut_wcs.all_world2pix(self.ra,self.dec,0)
             
-            # -- Creates ellipse and reduces it based on cut -- #
-            ellipse = self._get_err_px(self.cut_wcs)
-            ellipse_red =  self._cutoff_err_ellipse(ellipse)
-            rat = cut_size[0]/cut_size[1] # ratio
             
-            plt.figure(figsize=(4,4/rat))
-            plt.xlim(0,cut_size[0])
-            plt.ylim(0,cut_size[1])
-            
-            # -- Titles/GRB plotting -- #
-            if not extra:
-                if home_chip:
-                    plt.title('Camera {} Chip {}'.format(cam,chip))
-                    plt.scatter(cut_grb_px[0],cut_grb_px[1],color='g')
-                else:
-                    plt.title('Camera {} Chip {} (GRB is on Cam {} Chip {})'.format(cam,chip,self.camera,self.chip))
-        
-            else:
-                if (cut_grb_px[0]<cut_size[0]) & (cut_grb_px[0]>0) & (cut_grb_px[1]<cut_size[1]) & (cut_grb_px[1]>0):
-                    plt.title('Camera {} Chip {} Cut {}'.format(cam,chip,cut))
-                    plt.scatter(cut_grb_px[0],cut_grb_px[1],color='g')
-                else:
+            if plot:
+                
+                # -- Creates ellipse and reduces it based on cut -- #
+                ellipse = self._get_err_px(self.cut_wcs)
+                ellipse_red =  self._cutoff_err_ellipse(ellipse)
+                rat = cut_size[0]/cut_size[1] # ratio
+                
+                plt.figure(figsize=(4,4/rat))
+                plt.xlim(0,cut_size[0])
+                plt.ylim(0,cut_size[1])
+                
+                # -- Titles/GRB plotting -- #
+                if not extra:
                     if home_chip:
-                        
-                        a = np.arange(1,int(end)+1,1)
-                        b = [cut]
-                        other = list(set(a).symmetric_difference(set(b)))
-                        plt.title('Camera {} Chip {} Cut {} (GRB is on another cut {})'.format(cam,chip,cut,other))
+                        plt.title('Camera {} Chip {}'.format(cam,chip))
+                        plt.scatter(cut_grb_px[0],cut_grb_px[1],color='g')
                     else:
-                        plt.title('Camera {} Chip {} Cut {} (GRB is on Cam {} Chip {})'.format(cam,chip,cut,self.camera,self.chip))
-        
-            plt.grid()
+                        plt.title('Camera {} Chip {} (GRB is on Cam {} Chip {})'.format(cam,chip,self.camera,self.chip))
             
-            plt.plot(ellipse_red[0],ellipse_red[1])
+                else:
+                    if (cut_grb_px[0]<cut_size[0]) & (cut_grb_px[0]>0) & (cut_grb_px[1]<cut_size[1]) & (cut_grb_px[1]>0):
+                        plt.title('Camera {} Chip {} Cut {}'.format(cam,chip,cut))
+                        plt.scatter(cut_grb_px[0],cut_grb_px[1],color='g')
+                    else:
+                        if home_chip:
+                            
+                            a = np.arange(1,int(end)+1,1)
+                            b = [cut]
+                            other = list(set(a).symmetric_difference(set(b)))
+                            plt.title('Camera {} Chip {} Cut {} (GRB is on another cut {})'.format(cam,chip,cut,other))
+                        else:
+                            plt.title('Camera {} Chip {} Cut {} (GRB is on Cam {} Chip {})'.format(cam,chip,cut,self.camera,self.chip))
+            
+                plt.grid()
+                
+                plt.plot(ellipse_red[0],ellipse_red[1],marker=',')
             
         else:
             print('No cut made/located to be confirmed! Call .make_cut() to assign.')
@@ -1756,6 +1789,18 @@ class tessgrb():
                     hdulist.writeto(self.tessreduce_file,overwrite=True) 
                     
                     hdulist.close()
+                    
+                    # -- Deletes Memory -- #
+                    del(self.tessreduce)
+                    del(time)
+                    del(flux)
+                    del(bkg)
+                    del(data)
+                    del(table)
+                    del(tableTime)
+                    del(timeMJD)
+                    del(timeBJD)
+                    del(tCut)
                     
                     print('--Writing Complete (Time: {:.2f} mins)--'.format((t()-tw)/60))
                     print('\n')
@@ -2305,7 +2350,7 @@ class tessgrb():
             
             print('-----------{} Complete (Total Time: {:.2f} hrs)---------'.format(self.name,(t()-ts)/3600))
 
-    def tpf_info(self,cam=None,chip=None):
+    def tpf_info(self,cam=None,chip=None,cut=None):
         """
         Gets flux,time data feom reduced tpf 
         ------------------------------------
@@ -2319,19 +2364,38 @@ class tessgrb():
             cam = self.camera
         if chip is None:
             chip = self.chip
-            
-        self.make_cut(cam,chip,verbose=False)
         
-        if self.tessreduce_file is None:
-            print('Call .reduce()!')
+            
+        self.find_cut(plot=False,ask=False,verbose=False,cubing=False)
+        
+        file_path = '{}/Cam{}Chip{}'.format(self.path,cam,chip) 
+
+        
+        arr = np.array(self.cut_sizes)
+        
+        
+        if len(arr.shape) > 1:
+            if cut is None:
+                print('Please specify cut!')
+                return
+            else:
+                self.cutNum = cut
+                tess_file = file_path + '/{}-cam{}-chip{}-{}sigma-cut{}-Reduced.fits'.format(self.name,cam,chip,self.sig,cut)
+
         else:
-            tpf = tr.lk.TessTargetPixelFile(self.tessreduce_file)
+            tess_file = file_path + '/{}-cam{}-chip{}-{}sigma-cutReduced.fits'.format(self.name,cam,chip,self.sig)
+
+        if not os.path.exists(tess_file):
+            print('No reduced file.')
+            
+        else:
+            tpf = tr.lk.TessTargetPixelFile(tess_file)
             print('Getting Flux')
             self.flux = tr.strip_units(tpf.flux)
             print('Getting Time')
             self.times = tpf.time.value
             
-    def detect_events(self,cam=None,chip=None,significance=3,minlength=2,plot=True,reuse=False):
+    def detect_events(self,cam=None,chip=None,cut=None,significance=3,minlength=2,plot=True,reuse=False):
         """
         Detects events that peak a given # of std above the local median, and last 
         for a given number of times. 
@@ -2364,9 +2428,9 @@ class tessgrb():
             chip = self.chip
         
         # -- Get information from reduced data -- #
-        if self.times is None:
+        if (self.times is None) or (self.cutNum != cut):
             print('-------------Collecting flux,time arrays----------------')
-            self.tpf_info(cam,chip)
+            self.tpf_info(cam,chip,cut)
             print('-------------------------Done---------------------------')
             print('\n')
         
@@ -2387,6 +2451,9 @@ class tessgrb():
 
         if event_index - (splitStart+1) < 30:
             print('Be careful! Event is just after TESS break!')
+        
+        
+        self.confirm_cut(cut=cut,plot=False)
         
         # -- Create time/flux arrays in focused region around event -- #
         focus_times = self.times[event_index-10:event_index+20]
@@ -2466,11 +2533,14 @@ class tessgrb():
             eventmask = eventmask[order]
         
         if plot:
-            
-            rat = self.cut_sizes[1]/self.cut_sizes[0]
+            if cut is None:
+                cut_size = self.cut_sizes
+            else:
+                cut_size = self.cut_sizes[cut-1]
+            rat = cut_size[1]/cut_size[0]
             fig, ax = plt.subplots(ncols=1, nrows=1, constrained_layout=False, figsize=(6,6*rat))
-            ax.set_xlim(0,self.cut_sizes[0])
-            ax.set_ylim(0,self.cut_sizes[1])
+            ax.set_xlim(0,cut_size[0])
+            ax.set_ylim(0,cut_size[1])
             
             cut_grb_px = self.cut_wcs.all_world2pix(self.ra,self.dec,0)
             ellipse = self._get_err_px(self.cut_wcs)
@@ -2648,10 +2718,210 @@ class tessgrb():
         print('Video Made')
         
         
-    
+    def present_event(self,cam,chip,event,save=False,form='pixels',presentation='whole',cut=None):
         
         
-                    
+        file_path = '{}/Cam{}Chip{}'.format(self.path,cam,chip) 
+        
+        arr = np.array(self.cut_sizes)
+        
+        
+        if len(arr.shape) > 1:
+            if cut is None:
+                print('Please specify cut!')
+                return
+            else:
+                tess_file = file_path + '/{}-cam{}-chip{}-{}sigma-cut{}-Reduced.fits'.format(self.name,cam,chip,self.sig,cut)
+
+        else:
+            tess_file = file_path + '/{}-cam{}-chip{}-{}sigma-cutReduced.fits'.format(self.name,cam,chip,self.sig)
+        
+        self.cut_file = tess_file
+        self.cut = _extract_fits(self.cut_file)
+        self.cut_wcs = wcs.WCS(self.cut[2].header) 
+        
+        cut_grb_px = self.cut_wcs.all_world2pix(self.ra,self.dec,0)
+        ellipse = self._get_err_px(self.cut_wcs)
+        
+        if form.lower() == 'coords':
+            a,b = self.cut_wcs.all_world2pix(event[0],event[1],0)
+            event = (b,a)
+        elif form.lower() != 'pixels':
+            print('Please enter form as "pixels" or "coords".')
+        
+        if presentation.lower() == 'whole':
+            
+            LB = (min(ellipse[0])-50,min(ellipse[1])-50)
+            RU = (max(ellipse[0])+50,max(ellipse[1])+50)
+            
+            ysize = RU[1]-LB[1]
+            xsize = RU[0] - LB[0]
+            
+            rat = ysize/xsize
+
+            rat = 1.214           
+            
+            fig = plt.figure(constrained_layout=False, figsize=(6,6*rat))
+            ax = plt.subplot(projection=self.cut_wcs)
+            
+            ax.set_xlim(LB[0],RU[0])
+            ax.set_ylim(LB[1],RU[1])
+            
+            ax.plot(ellipse[0],ellipse[1],color='g',label='Estimated GRB Location')
+            ax.scatter(cut_grb_px[0],cut_grb_px[1],color='g',label='2σ Position Error Radius')
+            
+            ax.grid()
+            
+            x,y = ax.coords
+            
+            x.set_ticks(number=5)
+            y.set_ticks(number=5)
+            
+            #x.set_ticks_position('b')
+            #x.set_ticklabel_position('b')
+            #x.set_axislabel_position('b')
+            
+            #y.set_ticks_position('l')
+            #y.set_ticklabel_position('l')
+            #y.set_axislabel_position('l')
+            
+            x.set_ticklabel(size=12)
+            y.set_ticklabel(size=12)
+            
+            x.set_axislabel('Right Ascension',size=12)
+            y.set_axislabel('Declination',size=12)
+
+            if event[1] > 1/2 * xsize:
+                if event[0] > 4/5*ysize:
+                    point = (event[1] - 400,event[0]-90)
+                else:
+                    point = (event[1]-400,event[0]+30)
+            else:
+                if event[0] > 4/5*ysize:
+                    point = (event[1],event[0]-90)
+                else:
+                    point = (event[1],event[0]+30)
+
+            ax.scatter(event[1],event[0],marker='s',color='r',s=16,edgecolor='black')
+            #ax.annotate('{}'.format(self.name),point,fontsize=15)
+            
+            #ax.legend()
+            
+            if save:
+                plt.savefig('{}_in_whole'.format(self.name))
+            
+            return fig,ax
+            
+        elif presentation.lower() == 'cut':
+            
+            xsize = self.cut_sizes[cut-1][0]
+            ysize = self.cut_sizes[cut-1][1]
+            rat = ysize/xsize
+            
+            fig = plt.figure(constrained_layout=False, figsize=(6,6))
+            ax = plt.subplot(projection=self.cut_wcs)
+
+            ax.set_xlim(0,xsize)
+            ax.set_ylim(0,ysize)
+            
+            ax.plot(ellipse[0],ellipse[1])
+            ax.scatter(cut_grb_px[0],cut_grb_px[1])
+            
+            x,y = ax.coords
+            
+            x.set_ticks(spacing= .25 * u.hourangle)
+            y.set_ticks(spacing= 2 * u.deg)
+            
+            x.set_ticks_position('bt')
+            x.set_ticklabel_position('bt')
+            x.set_axislabel_position('bt')
+            
+            y.set_ticks_position('rl')
+            y.set_ticklabel_position('rl')
+            y.set_axislabel_position('rl')
+            
+            x.set_ticklabel(size=12)
+            y.set_ticklabel(size=12)
+            
+            x.set_axislabel('Right Ascension',size=12)
+            y.set_axislabel('Declination',size=12)
+            
+            ax.grid()
+                        
+            
+            if event[1] > 1/2 * xsize:
+                if event[0] > 4/5*ysize:
+                    point = (event[1] - 200,event[0]-30)
+                else:
+                    point = (event[1]-200,event[0]+15)
+            else:
+                if event[0] > 4/5*ysize:
+                    point = (event[1],event[0]-30)
+                else:
+                    point = (event[1],event[0]+15)
+
+            ax.scatter(event[1],event[0],marker='s',color='r',s=16,edgecolor='black')
+            ax.annotate('{}'.format(self.name),point,fontsize=15)
+            if save:
+                plt.savefig('{}_in_cut'.format(self.name))
+            
+            return fig,ax
+            
+        else:
+            print('Please state "presentation" as "whole/cut".')
+            return None,None
+        
+    def display_event(self,cam,chip,eventcoords,save=False):
+        
+        grbLoc = self.ref_wcs.all_world2pix(eventcoords[0],eventcoords[1],0)
+        
+        fig,ax = self.find_cut(cam,chip,replot=True,proj=True)
+        ax.set_title('')
+        
+        x,y = ax.coords
+        
+        x.set_ticks(spacing= 1 * u.hourangle)
+        y.set_ticks(spacing= 5 * u.deg)
+        
+        x.set_ticks_position('bt')
+        x.set_ticklabel_position('bt')
+        x.set_axislabel_position('bt')
+        
+        y.set_ticks_position('rl')
+        y.set_ticklabel_position('rl')
+        y.set_axislabel_position('rl')
+        
+        x.set_ticklabel(size=12)
+        y.set_ticklabel(size=12)
+        
+        x.set_axislabel('Right Ascension',size=12)
+        y.set_axislabel('Declination',size=12)
+
+        xsize = ax.get_xlim()[1]
+        ysize = ax.get_ylim()[1]
+        
+        if grbLoc[0] > 2/3 * xsize:
+            if grbLoc[1] > 4/5*ysize:
+                point = (grbLoc[0] - 600,grbLoc[1]-90)
+            else:
+                point = (grbLoc[0]-600,grbLoc[1]+30)
+        else:
+            if grbLoc[1] > 4/5*ysize:
+                point = (grbLoc[0],grbLoc[1]-90)
+            else:
+                point = (grbLoc[0],grbLoc[1]+30)
+            
+
+        ax.scatter(grbLoc[0],grbLoc[1],marker='s',color='r',s=16,edgecolor='black')
+        ax.annotate('{}'.format(self.name),point,fontsize=15)
+        
+        ax.legend()
+        
+        if save:
+            plt.savefig('{}_with_cuts'.format(self.name))
+        
+        
+        return fig,ax           
             
             
             
