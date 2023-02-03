@@ -7,6 +7,7 @@ from glob import glob
 import tessreduce as tr
 
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import pandas as pd
@@ -142,7 +143,9 @@ def observed_grbs(path='/home/phys/astronomy/hro52/Code/GammaRayBurstProject/TES
     good_camlist = []
     good_ccdlist = []
 
-    badNames = ['GRB180906A*','GRB210126A*','GRB210928B*','GRB190422C*']
+    badNames = ['GRB190507C*','GRB201120B*','GRB200128A',
+                'GRB220321A*','GRB211225A*','GRB180906A*',
+                'GRB210126A*','GRB210928B*','GRB190422C*']
 
 
     for ii in range(len(cutFrame)):
@@ -1274,7 +1277,7 @@ class tessgrb():
                 ax = plt.subplot()
             
             # -- Real rectangle edge -- #
-            rectangleTotal = patches.Rectangle((44,30), 2048, 2048,edgecolor='black',facecolor='none',alpha=1)
+            rectangleTotal = patches.Rectangle((44,30), 2048, 2048,edgecolor='black',facecolor='none',alpha=0.5)
             
             # -- Sets title -- #
             if home_chip:
@@ -1743,6 +1746,18 @@ class tessgrb():
                 self.cut = _extract_fits(self.cut_file)
     
                 try:
+                    
+                    # -- Defining so can be deleted if failed -- #
+                    self.tessreduce = 0
+                    tCut = 0
+                    data = 0
+                    table = 0
+                    tableTime = 0
+                    timeMJD = 0
+                    timeBJD = 0
+                    hdulist = 0
+                    
+                    
                     self.tessreduce = tr.tessreduce(tpf=self.cut_file,reduce=True,
                                                         corr_correction=False,
                                                         calibrate = False)
@@ -1754,58 +1769,73 @@ class tessgrb():
                     print('--Writing--')
                     tw = t()   # write timeStart
                     
-                    # -- Inputs information into fits HDU -- #
+                    # -- Inputs information into fits HDU -- #\
+                                                
                     hdulist = fits.HDUList(self.cut)
                     hdulist[0].header['REDUCED'] = (True,'confirms if data stored in file is reduced by TESSreduce')
                     hdulist[0].header['ZP'] = (self.tessreduce.zp,'zeropoint (tesscounts) of reduced flux')
                     hdulist[0].header['ZP_E'] = (self.tessreduce.zp_e,'zeropoint error (tesscounts) of reduced flux')
                     
-                    time = self.tessreduce.lc[0]
-                    flux = self.tessreduce.flux
-                    bkg = self.tessreduce.bkg
                     
                     print('getting data')
                     data = getdata(self.cut_file, 1)
                     table = Table(data)
+                    
+                    del(data)
+                    
                     tableTime = table['TIME']
-                    timeMJD = Time(time,format='mjd')
+                    timeMJD = Time(self.tessreduce.lc[0],format='mjd')
                     timeBJD = timeMJD.btjd
                     
                     indices = []
                     for j in range(len(timeBJD)):
                         index = np.argmin(abs(np.array(tableTime) - timeBJD[j]))
                         indices.append(index)
+                
                     
                     print('inputting data')
                     tCut = table[indices]
-                    tCut['TIME'] = time
-                    tCut['FLUX'] = flux
-                    tCut['FLUX_BKG'] = bkg
+                    
+                    del(table)
+                    del(timeMJD)
+                    del(BJD)
+                    del(tableTime)
+                    
+                    tCut['TIME'] = self.tessreduce.lc[0]
+                    tCut['FLUX'] = self.tessreduce.flux
+                    tCut['FLUX_BKG'] = self.tessreduce.bkg
+                    
+                    # -- Deletes Memory -- #
+                    del(self.tessreduce)
                     
                     hdulist[1] = fits.BinTableHDU(data=tCut,header=hdulist[1].header)            
             
+                    del(tCut)
+                
                     # -- Writes data -- #
                     print('writing data')
                     hdulist.writeto(self.tessreduce_file,overwrite=True) 
                     
                     hdulist.close()
                     
+                    print('--Writing Complete (Time: {:.2f} mins)--'.format((t()-tw)/60))
+                    print('\n')
+                
+                except:
+                    
                     # -- Deletes Memory -- #
                     del(self.tessreduce)
-                    del(time)
-                    del(flux)
-                    del(bkg)
+                    del(tCut)
                     del(data)
                     del(table)
                     del(tableTime)
                     del(timeMJD)
                     del(timeBJD)
-                    del(tCut)
+                    try:
+                        del(hdulist)
+                    except:
+                        pass
                     
-                    print('--Writing Complete (Time: {:.2f} mins)--'.format((t()-tw)/60))
-                    print('\n')
-                
-                except:
                     if extra:
                         print('Reducing Cam {} Chip {} Cut {} Failed :( Time Elapsed: {:.2f} mins.'.format(cam,chip,i+1,(t()-ts)/60))
                     else:
@@ -2557,10 +2587,17 @@ class tessgrb():
                 ax.annotate('Event ' + str(counter),point,fontsize=10)
                 
                 fig, ax2 = plt.subplots(ncols=2, nrows=1, constrained_layout=False, figsize=(11.5,3.5))
-    
-                ax2[0].set_title('Event ' + str(counter) + ' Lightcurve')
+                
+                if counter != 1:
+                    ax2[0].set_title('Event ' + str(counter) + ' Lightcurve')
                 ax2[0].plot(focus_times,focus_fluxes[:,event[0],event[1]])
-                ax2[0].axvline(self.eventtime,alpha=0.5,color='r')
+                ax2[0].axvline(self.eventtime,linestyle='--',alpha=1,color='black')
+                ax2[0].ticklabel_format(useOffset=False)
+                ax2[0].set_xlim(focus_times[0],focus_times[-1])
+                ax2[0].set_xlabel('Time (MJD)')
+                ax2[0].set_ylabel('TESS Counts (e$^-$/s)')
+                ax2[0].yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(5)) 
+                
                 
                 ax2[1].set_title('Event ' + str(counter) + ' Pixels')
                 ax2[1].set_xlim(np.min(event[1])-15,np.max(event[1]+15))
@@ -2871,9 +2908,8 @@ class tessgrb():
             print('Please state "presentation" as "whole/cut".')
             return None,None
         
-    def display_event(self,cam,chip,eventcoords,save=False):
+    def display_event(self,cam,chip,eventcoords=None,save=False):
         
-        grbLoc = self.ref_wcs.all_world2pix(eventcoords[0],eventcoords[1],0)
         
         fig,ax = self.find_cut(cam,chip,replot=True,proj=True)
         ax.set_title('')
@@ -2900,20 +2936,22 @@ class tessgrb():
         xsize = ax.get_xlim()[1]
         ysize = ax.get_ylim()[1]
         
-        if grbLoc[0] > 2/3 * xsize:
-            if grbLoc[1] > 4/5*ysize:
-                point = (grbLoc[0] - 600,grbLoc[1]-90)
+        if eventcoords is not None:
+            grbLoc = self.ref_wcs.all_world2pix(eventcoords[0],eventcoords[1],0)
+            if grbLoc[0] > 2/3 * xsize:
+                if grbLoc[1] > 4/5*ysize:
+                    point = (grbLoc[0] - 600,grbLoc[1]-90)
+                else:
+                    point = (grbLoc[0]-600,grbLoc[1]+30)
             else:
-                point = (grbLoc[0]-600,grbLoc[1]+30)
-        else:
-            if grbLoc[1] > 4/5*ysize:
-                point = (grbLoc[0],grbLoc[1]-90)
-            else:
-                point = (grbLoc[0],grbLoc[1]+30)
-            
-
-        ax.scatter(grbLoc[0],grbLoc[1],marker='s',color='r',s=16,edgecolor='black')
-        ax.annotate('{}'.format(self.name),point,fontsize=15)
+                if grbLoc[1] > 4/5*ysize:
+                    point = (grbLoc[0],grbLoc[1]-90)
+                else:
+                    point = (grbLoc[0],grbLoc[1]+30)
+                
+    
+            ax.scatter(grbLoc[0],grbLoc[1],marker='s',color='r',s=16,edgecolor='black')
+            ax.annotate('{}'.format(self.name),point,fontsize=15)
         
         ax.legend()
         
