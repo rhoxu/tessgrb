@@ -1796,20 +1796,21 @@ class tessgrb():
                     print('inputting data')
                     tCut = table[indices]
                     
+                    
                     del(table)
                     del(timeMJD)
-                    del(BJD)
+                    del(timeBJD)
                     del(tableTime)
-                    
+                                        
                     tCut['TIME'] = self.tessreduce.lc[0]
                     tCut['FLUX'] = self.tessreduce.flux
                     tCut['FLUX_BKG'] = self.tessreduce.bkg
-                    
+                                        
                     # -- Deletes Memory -- #
                     del(self.tessreduce)
-                    
+                                        
                     hdulist[1] = fits.BinTableHDU(data=tCut,header=hdulist[1].header)            
-            
+                        
                     del(tCut)
                 
                     # -- Writes data -- #
