@@ -143,10 +143,7 @@ def observed_grbs(path='/home/phys/astronomy/hro52/Code/GammaRayBurstProject/TES
     good_camlist = []
     good_ccdlist = []
 
-    badNames = ['GRB190507C*','GRB201120B*','GRB200128A',
-                'GRB220321A*','GRB211225A*','GRB180906A*',
-                'GRB210126A*','GRB210928B*','GRB190422C*']
-
+    badNames = ['GRB201120B*','GRB211225A*','GRB180906A*','GRB210126A*','GRB210928B*','GRB190422C*']
 
     for ii in range(len(cutFrame)):
         try: 
@@ -777,7 +774,22 @@ class tessgrb():
                         self.delete_files(cam, chip)
                 
     
-    def _get_cubeWCS_data(self,cam,chip):
+    def _adjust_sig(self):
+        
+        ts = t()
+        while (self.ref_wcs == 'WCS Process Failed') and ((t()-ts)<60):
+            if self.sig < 0.2:
+                print('True WCS Failure')
+                return
+            else:
+                self.sig = self.sig-0.1
+                self.sig = round(self.sig,1)
+                self._get_cubeWCS_data(self.camera,self.chip,exception=False)
+            
+            
+        print('Sig reduced to {:.1f}'.format(self.sig))
+            
+    def _get_cubeWCS_data(self,cam,chip,exception=True):
         """
         Used to obtain WCS information from a cube of data.
         --------------
@@ -833,6 +845,11 @@ class tessgrb():
         # -- Sets WCS to found object -- #
         if yup:
             self.ref_wcs = wcsItem
+        else:
+            self.ref_wcs = 'WCS Process Failed'
+            if exception:
+                print('WCS Information Failed. Reducing sig...')
+                self._adjust_sig()
         
     def _get_cube_info(self):
         """
@@ -1179,7 +1196,7 @@ class tessgrb():
         
         # -- Creates and reduces error ellipse -- #
         ellipse = self._get_err_px(self.ref_wcs)
-        ellipse = self._cutoff_err_ellipse(ellipse)
+        #ellipse = self._cutoff_err_ellipse(ellipse)
                 
         # -- Creates box and calculates its information -- #
         cornerLB,xRad,yRad = self._find_box(ellipse)
@@ -1412,7 +1429,8 @@ class tessgrb():
             # -- Depending on split, creates lists for cutting -- #
             if self.split is None:
                 
-                file_path = '{}/Cam{}Chip{}'.format(self.path,cam,chip) 
+                file_path = '{}/Cam{}Chip{}'.format(self.path,cam,chip)
+                
                 name_cut = '{}-cam{}-chip{}-{}sigma-cut.fits'.format(self.name,cam,chip,self.sig)
                 cut_path = file_path + '/' + name_cut
                 
@@ -1798,7 +1816,7 @@ class tessgrb():
                     
                     del(table)
                     del(timeMJD)
-                    del(BJD)
+                    del(timeBJD)
                     del(tableTime)
                     
                     tCut['TIME'] = self.tessreduce.lc[0]
